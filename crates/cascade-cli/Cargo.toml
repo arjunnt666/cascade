@@ -1,0 +1,18 @@
+[package]
+name = "cascade-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "cascade"
+path = "src/main.rs"
+
+[dependencies]
+cascade-core = { path = "../cascade-core" }
+cascade-runtime = { path = "../cascade-runtime" }
+tokio = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+tracing = { workspace = true }
+tracing-subscriber = "0.3"
+anyhow = { workspace = true }
