@@ -1,0 +1,16 @@
+{
+  "name": "@cascade/js",
+  "version": "0.1.0",
+  "description": "JS client for Cascade durable workflows (stub)",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"no tests yet\""
+  },
+  "keywords": ["workflow", "durable", "cascade"],
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

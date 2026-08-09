@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cascade-server
+  labels:
+    app: cascade
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cascade
+  template:
+    metadata:
+      labels:
+        app: cascade
+    spec:
+      containers:
+        - name: cascade
+          image: cascade:latest
+          ports:
+            - containerPort: 7233
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cascade
+spec:
+  selector:
+    app: cascade
+  ports:
+    - port: 7233
+      targetPort: 7233
+  type: ClusterIP
