@@ -1,0 +1,14 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  noop:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: placeholder
+        run: echo "release workflow stub — no artifacts yet"

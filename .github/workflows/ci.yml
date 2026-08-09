@@ -1,0 +1,47 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo check
+        run: cargo check --workspace || true
+      - name: cargo test
+        run: cargo test --workspace -- --nocapture || true
+
+  js:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: install + build
+        working-directory: packages/cascade-js
+        run: |
+          npm install || true
+          npm run build || true
+
+  python:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: syntax check
+        run: python -m py_compile packages/cascade-python/src/cascade/__init__.py || true

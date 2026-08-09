@@ -1,0 +1,38 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cascade-core",
+    "crates/cascade-history",
+    "crates/cascade-runtime",
+    "crates/cascade-timer",
+    "crates/cascade-worker",
+    "crates/cascade-server",
+    "crates/cascade-cli",
+    "crates/cascade-ffi",
+]
+default-members = ["crates/cascade-cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/arjunnt666/cascade"
+authors = ["Arjun NT"]
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+anyhow = "1"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+bytes = "1"
+parking_lot = "0.12"
+dashmap = "5"
+async-trait = "0.1"
+
+[profile.release]
+lto = true
+codegen-units = 1
