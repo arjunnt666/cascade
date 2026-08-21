@@ -1,12 +1,14 @@
 # Changelog
 
-## 0.1.1 — unreleased
+## 0.1.2
 
-- document default activity retry backoff (exponential, capped)
-- note timer durability depends on the history store implementation
-- clarify compensation handlers must be idempotent
+- add STATUS.md (honest scope)
+- maintenance commit
+
+## 0.1.1
+
+- retry docs, roadmap stubs
 
 ## 0.1.0
 
 - initial public skeleton
-- workflows as code, event history, timers, compensations
