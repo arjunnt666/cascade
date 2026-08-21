@@ -2,16 +2,16 @@
 
 durable workflow ideas you can actually run in one process.
 
-start a run. append history events. read them back. that is the slice that works today.
+start a run. schedule an activity. complete it. append the finish event. read the history back. that is the slice that works today.
 
-not Temporal. not a cluster. an embeddable history log plus a tiny runtime so `cascade start` does something besides print a banner.
+not Temporal. not a cluster. an embeddable history log plus a tiny runtime so `cascade run` does something besides print a banner.
 
 ## works today
 
 - core ids, events, payloads (bytes serde included, so the types actually compile)
 - in-memory history append / read
-- `cascade version` and `cascade start --workflow-type demo`
-- unit tests on the history store
+- apply_decisions writes ActivityScheduled / WorkflowCompleted into history
+- `cascade run` walks start -> activity -> complete and refuses to succeed if status is not Completed
 
 ## does not work yet
 
@@ -24,8 +24,7 @@ not Temporal. not a cluster. an embeddable history log plus a tiny runtime so `c
 ```bash
 cargo test --workspace
 cargo build -p cascade-cli
-./target/debug/cascade version
-./target/debug/cascade start --workflow-type demo
+./target/debug/cascade run
 ```
 
 ## license

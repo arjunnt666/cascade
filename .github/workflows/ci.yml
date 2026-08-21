@@ -20,6 +20,7 @@ jobs:
           cargo build -p cascade-cli
           ./target/debug/cascade version
           ./target/debug/cascade start --workflow-type demo
+          ./target/debug/cascade run
 
   python:
     runs-on: ubuntu-latest
