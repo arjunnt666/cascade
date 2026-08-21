@@ -1,17 +1,33 @@
 # cascade
 
-durable workflow ideas written down as crates.
+durable workflow ideas you can actually run in one process.
 
-workflows as code, activity retries, event history, timers, compensations. the layout is there so you can see how the pieces would talk. most of the deep runtime is still a sketch.
+start a run. append history events. read them back. that is the slice that works today.
 
-if you expected Temporal in a weekend, this is not that. if you wanted a clear crate map for a future engine, this is closer.
+not Temporal. not a cluster. an embeddable history log plus a tiny runtime so `cascade start` does something besides print a banner.
 
-## status
+## works today
 
-architecture + docs first. not production orchestration.
+- core ids, events, payloads (bytes serde included, so the types actually compile)
+- in-memory history append / read
+- `cascade version` and `cascade start --workflow-type demo`
+- unit tests on the history store
 
-see STATUS.md.
+## does not work yet
+
+- durable disk history
+- activity workers across processes
+- real compensations / sagas
+
+## try it
+
+```bash
+cargo test --workspace
+cargo build -p cascade-cli
+./target/debug/cascade version
+./target/debug/cascade start --workflow-type demo
+```
 
 ## license
 
-mit.
+mit. keep the event log append-only.

@@ -28,7 +28,7 @@ anyhow = "1"
 uuid = { version = "1", features = ["v4", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 tracing = "0.1"
-bytes = "1"
+bytes = { version = "1", features = ["serde"] }
 parking_lot = "0.12"
 dashmap = "5"
 async-trait = "0.1"

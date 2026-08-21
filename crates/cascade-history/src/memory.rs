@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use cascade_core::{HistoryEvent, RunId, Result, CascadeError};
+use cascade_core::{
+    CascadeError, EventPayload, EventType, HistoryEvent, Payload, RunId, Result, WorkflowId,
+};
 use parking_lot::RwLock;
 
 use crate::{AppendResult, HistoryBackend, Snapshot};
@@ -59,5 +61,50 @@ impl HistoryBackend for MemoryHistoryStore {
         let mut snaps = self.snapshots.write();
         snaps.insert(snapshot.run_id, snapshot);
         Ok(())
+    }
+}
+
+fn started(run: RunId, wf: WorkflowId, seq: u64) -> HistoryEvent {
+    HistoryEvent {
+        id: cascade_core::EventId::new(),
+        run_id: run,
+        workflow_id: wf,
+        sequence: seq,
+        event_type: EventType::WorkflowStarted,
+        payload: EventPayload::WorkflowStarted {
+            workflow_type: "demo".into(),
+            input: Payload::empty(),
+            task_queue: "default".into(),
+        },
+        timestamp: chrono::Utc::now(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn append_and_read() {
+        let store = MemoryHistoryStore::new();
+        let run = RunId::new();
+        let wf = WorkflowId::new();
+        store
+            .append(&run, vec![started(run, wf, 0)])
+            .await
+            .unwrap();
+        let events = store.get_events(&run, 0).await.unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, EventType::WorkflowStarted);
+    }
+
+    #[tokio::test]
+    async fn missing_run_errors() {
+        let store = MemoryHistoryStore::new();
+        let err = store.get_events(&RunId::new(), 0).await.unwrap_err();
+        match err {
+            CascadeError::RunNotFound(_) => {}
+            other => panic!("unexpected {other:?}"),
+        }
     }
 }
