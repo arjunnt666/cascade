@@ -1,32 +1,17 @@
-# cascade
+cascade
 
-durable workflow ideas you can actually run in one process.
+I got tired of reading Temporal docs for a thing I wanted to try in one process. so I started this.
 
-start a run. schedule an activity. complete it. append the finish event. read the history back. that is the slice that works today.
+You start a run, schedule an activity, complete it, append the finish event, then read the history back. `cascade run` walks that path and fails if the status is not Completed. that is the only slice I will claim.
 
-not Temporal. not a cluster. an embeddable history log plus a tiny runtime so `cascade run` does something besides print a banner.
+Core ids, events, and payloads compile (bytes serde included, otherwise the types would be lying). history is in memory. apply_decisions writes ActivityScheduled and WorkflowCompleted into that history.
 
-## works today
+I have not written disk history, workers in other processes, or real compensations. if you need those, this is the wrong repo today.
 
-- core ids, events, payloads (bytes serde included, so the types actually compile)
-- in-memory history append / read
-- apply_decisions writes ActivityScheduled / WorkflowCompleted into history
-- `cascade run` walks start -> activity -> complete and refuses to succeed if status is not Completed
-
-## does not work yet
-
-- durable disk history
-- activity workers across processes
-- real compensations / sagas
-
-## try it
-
-```bash
+```
 cargo test --workspace
 cargo build -p cascade-cli
 ./target/debug/cascade run
 ```
 
-## license
-
-mit. keep the event log append-only.
+MIT. keep the event log append only.
