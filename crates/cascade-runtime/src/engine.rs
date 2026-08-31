@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use cascade_core::{
-    ActivityId, EventPayload, EventType, HistoryEvent, Payload, Result, RunId, WorkflowId,
+    ActivityId, EventPayload, EventType, HistoryEvent, Payload, Result, RunId, TimerId, WorkflowId,
     WorkflowOptions, WorkflowStatus,
 };
+
 use cascade_history::{HistoryStore, MemoryHistoryStore};
 use tracing::{debug, info};
 
@@ -106,6 +107,7 @@ impl RuntimeEngine {
                     EventType::TimerCancelled,
                     EventPayload::TimerFired { timer_id },
                 ),
+
                 DecisionKind::ContinueAsNew { input } => (
                     EventType::MarkerRecorded,
                     EventPayload::SignalReceived {
@@ -153,7 +155,23 @@ impl RuntimeEngine {
         Ok(())
     }
 
+    pub async fn fire_timer(&self, run_id: &RunId, timer_id: TimerId) -> Result<()> {
+        let (workflow_id, seq) = self.next_seq(run_id).await?;
+        let event = HistoryEvent {
+            id: cascade_core::EventId::new(),
+            run_id: *run_id,
+            workflow_id,
+            sequence: seq,
+            event_type: EventType::TimerFired,
+            payload: EventPayload::TimerFired { timer_id },
+            timestamp: chrono::Utc::now(),
+        };
+        self.history.append(run_id, vec![event]).await?;
+        Ok(())
+    }
+
     pub async fn get_status(&self, run_id: &RunId) -> Result<WorkflowStatus> {
+
         let events = self.history.load(run_id, 0).await?;
         if let Some(last) = events.last() {
             match last.event_type {
@@ -229,4 +247,44 @@ mod tests {
             ]
         );
     }
+
+    #[tokio::test]
+    async fn timer_starts_then_fires() {
+        let engine = RuntimeEngine::new();
+        let (_wf, run) = engine
+            .start("wait", Payload::empty(), WorkflowOptions::default())
+            .await
+            .unwrap();
+        let timer = TimerId::new();
+        engine
+            .apply_decisions(
+                &run,
+                vec![Decision {
+                    kind: DecisionKind::StartTimer {
+                        timer_id: timer,
+                        fire_at: chrono::Utc::now(),
+                    },
+                }],
+            )
+            .await
+            .unwrap();
+        engine.fire_timer(&run, timer).await.unwrap();
+        let kinds: Vec<_> = engine
+            .events(&run)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|e| e.event_type)
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![
+                EventType::WorkflowStarted,
+                EventType::TimerStarted,
+                EventType::TimerFired,
+            ]
+        );
+        assert_eq!(engine.get_status(&run).await.unwrap(), WorkflowStatus::Running);
+    }
 }
+

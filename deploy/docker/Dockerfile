@@ -2,10 +2,10 @@
 FROM rust:1.80-slim AS builder
 WORKDIR /app
 COPY . .
-RUN cargo build --release -p cascade-cli -p cascade-server || true
+RUN cargo build --release -p cascade-cli -p cascade-server
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /app/target/release/cascade /usr/local/bin/cascade || true
+COPY --from=builder /app/target/release/cascade /usr/local/bin/cascade
 EXPOSE 7233
 CMD ["cascade", "version"]
