@@ -1,7 +1,8 @@
-//! Durable timer service.
+//! Timer bookkeeping. The runtime keeps timers in history; this is for
+//! callers that want one sleeper task instead of one per timer.
 
+use cascade_core::{Result, RunId, TimerId};
 use chrono::{DateTime, Utc};
-use cascade_core::{Result, TimerId, RunId};
 
 pub mod wheel;
 pub use wheel::TimerWheel;

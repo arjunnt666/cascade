@@ -3,6 +3,7 @@ name = "cascade-worker"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Activity registry and worker pool for cascade"
 
 [dependencies]
 cascade-core = { path = "../cascade-core" }

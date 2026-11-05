@@ -3,17 +3,31 @@ name = "cascade-runtime"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "Replay-based workflow runtime for cascade"
 
 [dependencies]
 cascade-core = { path = "../cascade-core" }
 cascade-history = { path = "../cascade-history" }
+cascade-worker = { path = "../cascade-worker" }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-thiserror = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
-async-trait = { workspace = true }
 tracing = { workspace = true }
-parking_lot = { workspace = true }
-dashmap = { workspace = true }
+fastrand = "2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[example]]
+name = "hello"
+path = "../../examples/hello/main.rs"
+
+[[example]]
+name = "parallel"
+path = "../../examples/parallel/main.rs"
+
+[[example]]
+name = "saga"
+path = "../../examples/saga/main.rs"

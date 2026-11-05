@@ -1,31 +1,30 @@
-use std::sync::Arc;
+//! Low-level run API. You make the decisions yourself and feed results in.
+//! `Cascade` (host.rs) is built on the same history and does this for you.
 
 use cascade_core::{
-    ActivityId, EventPayload, EventType, HistoryEvent, Payload, Result, RunId, TimerId, WorkflowId,
-    WorkflowOptions, WorkflowStatus,
+    ActivityId, CascadeError, EventPayload, EventType, HistoryEvent, Payload, Result, RunId,
+    TimerId, WorkflowId, WorkflowOptions, WorkflowStatus,
 };
-
-use cascade_history::{HistoryStore, MemoryHistoryStore};
+use cascade_history::HistoryStore;
 use tracing::{debug, info};
 
-use crate::decision::{Decision, DecisionKind};
+use crate::decision::Decision;
 
-/// Simple single-process runtime. History is the source of truth.
 pub struct RuntimeEngine {
-    history: Arc<HistoryStore<MemoryHistoryStore>>,
+    history: HistoryStore,
 }
 
 impl RuntimeEngine {
     pub fn new() -> Self {
-        Self {
-            history: Arc::new(HistoryStore::new(MemoryHistoryStore::new())),
-        }
+        Self::with_history(HistoryStore::memory())
     }
 
-    pub fn with_history(history: HistoryStore<MemoryHistoryStore>) -> Self {
-        Self {
-            history: Arc::new(history),
-        }
+    pub fn with_history(history: HistoryStore) -> Self {
+        Self { history }
+    }
+
+    pub fn history(&self) -> &HistoryStore {
+        &self.history
     }
 
     pub async fn start(
@@ -34,24 +33,18 @@ impl RuntimeEngine {
         input: Payload,
         options: WorkflowOptions,
     ) -> Result<(WorkflowId, RunId)> {
-        let workflow_id = WorkflowId::new();
-        let run_id = RunId::new();
-
-        let start_event = HistoryEvent {
-            id: cascade_core::EventId::new(),
+        let (workflow_id, run_id) = (WorkflowId::new(), RunId::new());
+        let started = HistoryEvent::new(
             run_id,
             workflow_id,
-            sequence: 0,
-            event_type: EventType::WorkflowStarted,
-            payload: EventPayload::WorkflowStarted {
+            0,
+            EventPayload::WorkflowStarted {
                 workflow_type: workflow_type.to_string(),
                 input,
-                task_queue: options.task_queue.clone(),
+                task_queue: options.task_queue,
             },
-            timestamp: chrono::Utc::now(),
-        };
-
-        self.history.append(&run_id, vec![start_event]).await?;
+        );
+        self.history.append(&run_id, vec![started]).await?;
         info!(%workflow_id, %run_id, workflow_type, "workflow started");
         Ok((workflow_id, run_id))
     }
@@ -60,76 +53,39 @@ impl RuntimeEngine {
         self.history.load(run_id, 0).await
     }
 
-    async fn next_seq(&self, run_id: &RunId) -> Result<(WorkflowId, u64)> {
-        let events = self.history.load(run_id, 0).await?;
-        let wf = events
+    /// Append payloads after whatever is in history now. Refuses to write
+    /// past a terminal event.
+    pub async fn append(&self, run_id: &RunId, payloads: Vec<EventPayload>) -> Result<()> {
+        if payloads.is_empty() {
+            return Ok(());
+        }
+        let events = self.events(run_id).await?;
+        let first = events
             .first()
-            .map(|e| e.workflow_id)
-            .ok_or_else(|| cascade_core::CascadeError::RunNotFound(run_id.to_string()))?;
-        Ok((wf, events.len() as u64))
+            .ok_or_else(|| CascadeError::RunNotFound(run_id.to_string()))?;
+        if events.iter().any(HistoryEvent::is_terminal) {
+            return Err(CascadeError::InvalidTransition(format!(
+                "run {run_id} already finished"
+            )));
+        }
+        let wf = first.workflow_id;
+        let base = events.len() as u64;
+        let new: Vec<_> = payloads
+            .into_iter()
+            .enumerate()
+            .map(|(i, p)| HistoryEvent::new(*run_id, wf, base + i as u64, p))
+            .collect();
+        debug!(%run_id, count = new.len(), "appending events");
+        self.history.append(run_id, new).await?;
+        Ok(())
     }
 
     pub async fn apply_decisions(&self, run_id: &RunId, decisions: Vec<Decision>) -> Result<()> {
-        if decisions.is_empty() {
-            return Ok(());
-        }
-        let (workflow_id, mut seq) = self.next_seq(run_id).await?;
-        let mut events = Vec::with_capacity(decisions.len());
-        for d in decisions {
-            let (event_type, payload) = match d.kind {
-                DecisionKind::ScheduleActivity {
-                    activity_id,
-                    activity_type,
-                    input,
-                    options,
-                } => (
-                    EventType::ActivityScheduled,
-                    EventPayload::ActivityScheduled {
-                        activity_id,
-                        activity_type,
-                        input,
-                        options,
-                    },
-                ),
-                DecisionKind::CompleteWorkflow { result } => (
-                    EventType::WorkflowCompleted,
-                    EventPayload::WorkflowCompleted { result },
-                ),
-                DecisionKind::FailWorkflow { reason } => (
-                    EventType::WorkflowFailed,
-                    EventPayload::WorkflowFailed { reason },
-                ),
-                DecisionKind::StartTimer { timer_id, fire_at } => (
-                    EventType::TimerStarted,
-                    EventPayload::TimerStarted { timer_id, fire_at },
-                ),
-                DecisionKind::CancelTimer { timer_id } => (
-                    EventType::TimerCancelled,
-                    EventPayload::TimerFired { timer_id },
-                ),
-
-                DecisionKind::ContinueAsNew { input } => (
-                    EventType::MarkerRecorded,
-                    EventPayload::SignalReceived {
-                        signal_name: "continue_as_new".into(),
-                        input,
-                    },
-                ),
-            };
-            events.push(HistoryEvent {
-                id: cascade_core::EventId::new(),
-                run_id: *run_id,
-                workflow_id,
-                sequence: seq,
-                event_type,
-                payload,
-                timestamp: chrono::Utc::now(),
-            });
-            seq += 1;
-        }
-        debug!(%run_id, count = events.len(), "applying decisions");
-        self.history.append(run_id, events).await?;
-        Ok(())
+        let payloads = decisions
+            .into_iter()
+            .map(|d| d.kind.into_payload())
+            .collect();
+        self.append(run_id, payloads).await
     }
 
     pub async fn complete_activity(
@@ -138,51 +94,47 @@ impl RuntimeEngine {
         activity_id: ActivityId,
         result: Payload,
     ) -> Result<()> {
-        let (workflow_id, seq) = self.next_seq(run_id).await?;
-        let event = HistoryEvent {
-            id: cascade_core::EventId::new(),
-            run_id: *run_id,
-            workflow_id,
-            sequence: seq,
-            event_type: EventType::ActivityCompleted,
-            payload: EventPayload::ActivityCompleted {
+        self.append(
+            run_id,
+            vec![EventPayload::ActivityCompleted {
                 activity_id,
                 result,
-            },
-            timestamp: chrono::Utc::now(),
-        };
-        self.history.append(run_id, vec![event]).await?;
-        Ok(())
+            }],
+        )
+        .await
+    }
+
+    pub async fn fail_activity(
+        &self,
+        run_id: &RunId,
+        activity_id: ActivityId,
+        reason: String,
+        attempt: u32,
+        will_retry: bool,
+    ) -> Result<()> {
+        self.append(
+            run_id,
+            vec![EventPayload::ActivityFailed {
+                activity_id,
+                reason,
+                attempt,
+                will_retry,
+            }],
+        )
+        .await
     }
 
     pub async fn fire_timer(&self, run_id: &RunId, timer_id: TimerId) -> Result<()> {
-        let (workflow_id, seq) = self.next_seq(run_id).await?;
-        let event = HistoryEvent {
-            id: cascade_core::EventId::new(),
-            run_id: *run_id,
-            workflow_id,
-            sequence: seq,
-            event_type: EventType::TimerFired,
-            payload: EventPayload::TimerFired { timer_id },
-            timestamp: chrono::Utc::now(),
-        };
-        self.history.append(run_id, vec![event]).await?;
-        Ok(())
+        self.append(run_id, vec![EventPayload::TimerFired { timer_id }])
+            .await
     }
 
     pub async fn get_status(&self, run_id: &RunId) -> Result<WorkflowStatus> {
-
-        let events = self.history.load(run_id, 0).await?;
-        if let Some(last) = events.last() {
-            match last.event_type {
-                EventType::WorkflowCompleted => Ok(WorkflowStatus::Completed),
-                EventType::WorkflowFailed => Ok(WorkflowStatus::Failed),
-                EventType::WorkflowCancelled => Ok(WorkflowStatus::Cancelled),
-                _ => Ok(WorkflowStatus::Running),
-            }
-        } else {
-            Ok(WorkflowStatus::Running)
+        let events = self.events(run_id).await?;
+        if events.is_empty() {
+            return Err(CascadeError::RunNotFound(run_id.to_string()));
         }
+        Ok(status_of(&events))
     }
 }
 
@@ -192,54 +144,78 @@ impl Default for RuntimeEngine {
     }
 }
 
+pub(crate) fn status_of(events: &[HistoryEvent]) -> WorkflowStatus {
+    match events
+        .iter()
+        .rev()
+        .find(|e| e.is_terminal())
+        .map(|e| e.event_type)
+    {
+        Some(EventType::WorkflowCompleted) => WorkflowStatus::Completed,
+        Some(EventType::WorkflowFailed) => WorkflowStatus::Failed,
+        Some(EventType::WorkflowCancelled) => WorkflowStatus::Cancelled,
+        Some(EventType::WorkflowContinuedAsNew) => WorkflowStatus::ContinuedAsNew,
+        _ => WorkflowStatus::Running,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DecisionKind;
     use cascade_core::ActivityOptions;
+    use serde_json::json;
+
+    fn kinds(events: &[HistoryEvent]) -> Vec<EventType> {
+        events.iter().map(|e| e.event_type).collect()
+    }
 
     #[tokio::test]
     async fn schedule_complete_finish() {
         let engine = RuntimeEngine::new();
         let (_wf, run) = engine
-            .start("order", Payload::from_json(&serde_json::json!({"sku":"x"})).unwrap(), WorkflowOptions::default())
+            .start(
+                "order",
+                Payload::from_json(&json!({"sku": "x"})).unwrap(),
+                WorkflowOptions::default(),
+            )
             .await
             .unwrap();
         let act = ActivityId::new();
         engine
             .apply_decisions(
                 &run,
-                vec![Decision {
-                    kind: DecisionKind::ScheduleActivity {
-                        activity_id: act,
-                        activity_type: "charge".into(),
-                        input: Payload::empty(),
-                        options: ActivityOptions::default(),
-                    },
-                }],
+                vec![DecisionKind::ScheduleActivity {
+                    activity_id: act,
+                    activity_type: "charge".into(),
+                    input: Payload::empty(),
+                    options: ActivityOptions::default(),
+                }
+                .into()],
             )
             .await
             .unwrap();
         engine
-            .complete_activity(&run, act, Payload::from_json(&serde_json::json!({"ok":true})).unwrap())
+            .complete_activity(&run, act, Payload::from_json(&json!({"ok": true})).unwrap())
             .await
             .unwrap();
         engine
             .apply_decisions(
                 &run,
-                vec![Decision {
-                    kind: DecisionKind::CompleteWorkflow {
-                        result: Payload::from_json(&serde_json::json!({"charged":true})).unwrap(),
-                    },
-                }],
+                vec![DecisionKind::CompleteWorkflow {
+                    result: Payload::from_json(&json!({"charged": true})).unwrap(),
+                }
+                .into()],
             )
             .await
             .unwrap();
-        assert_eq!(engine.get_status(&run).await.unwrap(), WorkflowStatus::Completed);
-        let events = engine.events(&run).await.unwrap();
-        let kinds: Vec<_> = events.iter().map(|e| e.event_type.clone()).collect();
         assert_eq!(
-            kinds,
-            vec![
+            engine.get_status(&run).await.unwrap(),
+            WorkflowStatus::Completed
+        );
+        assert_eq!(
+            kinds(&engine.events(&run).await.unwrap()),
+            [
                 EventType::WorkflowStarted,
                 EventType::ActivityScheduled,
                 EventType::ActivityCompleted,
@@ -249,7 +225,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn timer_starts_then_fires() {
+    async fn cancel_timer_records_cancel_not_fire() {
         let engine = RuntimeEngine::new();
         let (_wf, run) = engine
             .start("wait", Payload::empty(), WorkflowOptions::default())
@@ -259,32 +235,66 @@ mod tests {
         engine
             .apply_decisions(
                 &run,
-                vec![Decision {
-                    kind: DecisionKind::StartTimer {
+                vec![
+                    DecisionKind::StartTimer {
                         timer_id: timer,
                         fire_at: chrono::Utc::now(),
-                    },
-                }],
+                    }
+                    .into(),
+                    DecisionKind::CancelTimer { timer_id: timer }.into(),
+                ],
             )
             .await
             .unwrap();
-        engine.fire_timer(&run, timer).await.unwrap();
-        let kinds: Vec<_> = engine
-            .events(&run)
-            .await
-            .unwrap()
-            .into_iter()
-            .map(|e| e.event_type)
-            .collect();
+        let events = engine.events(&run).await.unwrap();
         assert_eq!(
-            kinds,
-            vec![
+            kinds(&events),
+            [
                 EventType::WorkflowStarted,
                 EventType::TimerStarted,
-                EventType::TimerFired,
+                EventType::TimerCancelled
             ]
         );
-        assert_eq!(engine.get_status(&run).await.unwrap(), WorkflowStatus::Running);
+        assert!(matches!(
+            events[2].payload,
+            EventPayload::TimerCancelled { .. }
+        ));
+        assert_eq!(
+            engine.get_status(&run).await.unwrap(),
+            WorkflowStatus::Running
+        );
+    }
+
+    #[tokio::test]
+    async fn nothing_lands_after_terminal_event() {
+        let engine = RuntimeEngine::new();
+        let (_wf, run) = engine
+            .start("x", Payload::empty(), WorkflowOptions::default())
+            .await
+            .unwrap();
+        engine
+            .apply_decisions(
+                &run,
+                vec![DecisionKind::ContinueAsNew {
+                    input: Payload::empty(),
+                }
+                .into()],
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            engine.get_status(&run).await.unwrap(),
+            WorkflowStatus::ContinuedAsNew
+        );
+        assert!(engine.fire_timer(&run, TimerId::new()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn unknown_run() {
+        let engine = RuntimeEngine::new();
+        assert!(matches!(
+            engine.get_status(&RunId::new()).await,
+            Err(CascadeError::RunNotFound(_))
+        ));
     }
 }
-
