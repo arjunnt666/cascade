@@ -1,19 +1,31 @@
-# Getting Started
+# Getting started
 
 ```bash
-# from the workspace root
-cargo build -p cascade-cli
-./target/debug/cascade version
-./target/debug/cascade start --workflow-type demo
+cargo run -p cascade-runtime --example hello
 ```
 
-That starts a workflow in the in-memory runtime and prints the IDs.
+that registers a workflow and an activity in-process, runs it, and prints
+the history.
 
-For a real system you would:
+## over http
 
-1. Stand up a durable history store (not the memory one).
-2. Run the server.
-3. Run workers that implement your activities.
-4. Call StartWorkflow from your application via the JS/Python clients or the CLI.
+```bash
+cargo run -p cascade-cli -- serve --data ./cascade-data
+# another shell
+cargo run -p cascade-cli -- start --workflow-type order --input '{"sku": "tea"}'
+curl localhost:7233/runs/<run_id>
+curl localhost:7233/runs/<run_id>/history
+```
 
-None of those pieces are fully wired yet — this is still early skeleton.
+`approval` waits for a signal:
+
+```bash
+cargo run -p cascade-cli -- start --workflow-type approval --input '{"timeout_secs": 600}'
+curl -X POST localhost:7233/runs/<run_id>/signals/approve -d '"me"'
+```
+
+kill the server while a run is waiting and start it again with the same
+`--data`; it picks the run back up.
+
+clients: `packages/cascade-python` (stdlib only) and `packages/cascade-js`
+(fetch).

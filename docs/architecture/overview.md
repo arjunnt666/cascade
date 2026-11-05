@@ -1,37 +1,52 @@
-# Architecture Overview
+# Architecture
 
-Cascade is a durable workflow engine. The source of truth is an append-only event history per run.
+One append-only event log per run. Everything else is derived from it.
 
-## Core pieces
+## crates
 
-1. **History** (`cascade-history`)  
-   Append-only log of events (WorkflowStarted, ActivityScheduled, TimerFired, …).  
-   Snapshots allow fast recovery without replaying the entire log.
+- `cascade-core`: ids, events, payloads, options, errors.
+- `cascade-history`: the log. `MemoryHistoryStore` and `FileHistoryStore`
+  (one JSON-lines file per run, fsync per append, a torn last line is cut
+  off on open). Appends must carry the next sequence number, so two writers
+  can't both extend a run.
+- `cascade-runtime`: `WorkflowContext` (replay), `Cascade` (the host that
+  drives runs), `RuntimeEngine` (append decisions by hand).
+- `cascade-worker`: activity registry and a bounded worker pool.
+- `cascade-timer`: a min-heap of timers with cancel. The host doesn't need
+  it (it sleeps per timer), it's there for callers with lots of timers.
+- `cascade-server`: HTTP API.
+- `cascade-cli`: `run`, `serve`, `start`, `version`.
 
-2. **Runtime** (`cascade-runtime`)  
-   Replays history to reconstruct workflow state, then lets the workflow code produce *decisions*.  
-   Decisions become new history events + tasks for workers/timers.
+## how a run moves
 
-3. **Timer service** (`cascade-timer`)  
-   Durable timers that fire even after process restarts (when backed by persistent storage).
+1. `start` appends `WorkflowStarted` and drives the run.
+2. driving = load history, run the workflow function from the top against
+   it. each `ctx.activity` / `ctx.sleep` / `ctx.signal` / `ctx.side_effect`
+   takes the next slot of its kind. if history has the slot, its recorded
+   outcome is used; otherwise a decision is recorded and the future stays
+   pending.
+3. new decisions are appended (`ActivityScheduled`, `TimerStarted`,
+   `MarkerRecorded`, or `WorkflowCompleted` / `WorkflowFailed`).
+4. activities and timers with no outcome get a tokio task. when one
+   finishes it appends its result and drives the run again.
 
-4. **Worker pool** (`cascade-worker`)  
-   Polls activity task queues, executes user code, heartbeats, reports results back into history.
+drives for one run are serialized by a per-run lock.
 
-5. **Server** (`cascade-server`)  
-   gRPC / HTTP surface for StartWorkflow, Signal, Query, Cancel, etc.
+## determinism
 
-## Determinism
+outcomes are revealed to the workflow in history order: one poll per
+outcome event. so `select!` over a timer and a signal picks whichever was
+recorded first, on every replay, even though both are in history later.
 
-Workflow code must be deterministic with respect to history. All non-deterministic side effects (I/O, time, random) go through the `WorkflowContext` so they are recorded and can be replayed.
+if replay asks for activity "b" where history has "a" in that slot, the run
+fails with a non-determinism error rather than guessing.
 
-## Failure model
+`ctx.now()` is the timestamp of the newest event replay has reached, not
+the wall clock.
 
-- Activities can fail and be retried according to a `RetryPolicy`.
-- Workflows can be cancelled or timed out.
-- Compensating actions (sagas) are just more activities scheduled by the workflow.
+## not done
 
-## Status
-
-Most of the interesting machinery is present as traits + in-memory implementations.  
-Persistence, leasing, and the actual decision loop are still stubs.
+- one process per history. no leases, so two servers on the same data dir
+  will corrupt runs.
+- continue-as-new is an event type but nothing starts the new run.
+- snapshots are stored but replay always starts from event 0.

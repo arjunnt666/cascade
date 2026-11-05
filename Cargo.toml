@@ -32,6 +32,7 @@ bytes = { version = "1", features = ["serde"] }
 parking_lot = "0.12"
 dashmap = "5"
 async-trait = "0.1"
+axum = "0.7"
 
 [profile.release]
 lto = true

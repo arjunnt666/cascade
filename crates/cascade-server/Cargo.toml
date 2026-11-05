@@ -3,13 +3,17 @@ name = "cascade-server"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+description = "HTTP API for a cascade host"
 
 [dependencies]
 cascade-core = { path = "../cascade-core" }
 cascade-runtime = { path = "../cascade-runtime" }
-cascade-history = { path = "../cascade-history" }
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
-async-trait = { workspace = true }
+axum = { workspace = true }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

@@ -29,6 +29,11 @@ impl Payload {
     }
 
     pub fn as_json<T: for<'de> Deserialize<'de>>(&self) -> Result<T, serde_json::Error> {
+        // An empty payload decodes as JSON null, so `()` and `Option<T>`
+        // round-trip through Payload::empty().
+        if self.data.is_empty() {
+            return serde_json::from_slice(b"null");
+        }
         serde_json::from_slice(&self.data)
     }
 }

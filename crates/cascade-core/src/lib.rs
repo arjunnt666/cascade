@@ -1,20 +1,19 @@
-//! Core types for Cascade durable workflows.
-//!
-//! Events, identifiers, errors, and the basic vocabulary everything else speaks.
+//! Types shared by every cascade crate: ids, history events, payloads,
+//! options and the error type.
 
-pub mod error;
-pub mod id;
-pub mod event;
 pub mod activity;
-pub mod workflow;
+pub mod error;
+pub mod event;
+pub mod id;
 pub mod payload;
+pub mod workflow;
 
+pub use activity::{ActivityInfo, ActivityOptions, ActivityStatus, RetryPolicy};
 pub use error::{CascadeError, Result};
-pub use id::{WorkflowId, RunId, ActivityId, TimerId, EventId};
-pub use event::{HistoryEvent, EventType, EventPayload};
-pub use activity::{ActivityInfo, ActivityStatus, ActivityOptions};
-pub use workflow::{WorkflowInfo, WorkflowStatus, WorkflowOptions};
+pub use event::{EventPayload, EventType, HistoryEvent};
+pub use id::{ActivityId, EventId, RunId, TimerId, WorkflowId};
 pub use payload::Payload;
+pub use workflow::{WorkflowInfo, WorkflowOptions, WorkflowStatus};
 
 /// Namespace for logical isolation of workflow types / task queues.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]

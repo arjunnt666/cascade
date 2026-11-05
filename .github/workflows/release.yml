@@ -5,10 +5,17 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
-  noop:
+  linux:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
-      - name: placeholder
-        run: echo "release workflow stub — no artifacts yet"
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release -p cascade-cli
+      - run: tar czf cascade-${{ github.ref_name }}-x86_64-linux.tar.gz -C target/release cascade
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: cascade-*.tar.gz

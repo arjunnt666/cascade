@@ -3,7 +3,10 @@ use uuid::Uuid;
 
 macro_rules! id_type {
     ($name:ident) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[derive(
+            Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize,
+        )]
+        #[serde(transparent)]
         pub struct $name(pub Uuid);
 
         impl $name {
@@ -19,6 +22,13 @@ macro_rules! id_type {
         impl Default for $name {
             fn default() -> Self {
                 Self::new()
+            }
+        }
+
+        impl std::str::FromStr for $name {
+            type Err = uuid::Error;
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                Ok(Self(s.parse()?))
             }
         }
 

@@ -19,6 +19,13 @@ spec:
           image: cascade:latest
           ports:
             - containerPort: 7233
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 7233
+          volumeMounts:
+            - name: data
+              mountPath: /data
           resources:
             requests:
               cpu: "100m"
@@ -26,6 +33,11 @@ spec:
             limits:
               cpu: "500m"
               memory: "512Mi"
+      # one replica only: runs are locked in-process, two servers on the
+      # same history would race
+      volumes:
+        - name: data
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

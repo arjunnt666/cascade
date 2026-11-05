@@ -13,14 +13,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: cargo test
-        run: cargo test --workspace -- --nocapture
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
       - name: cli smoke
         run: |
           cargo build -p cascade-cli
           ./target/debug/cascade version
-          ./target/debug/cascade start --workflow-type demo
           ./target/debug/cascade run
+          ./target/debug/cascade serve --data "$RUNNER_TEMP/cascade" &
+          sleep 2
+          ./target/debug/cascade start --workflow-type order --input '{"sku": "ci"}'
+          curl -fsS localhost:7233/workflows
 
   python:
     runs-on: ubuntu-latest

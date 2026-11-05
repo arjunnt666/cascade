@@ -9,4 +9,3 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 cascade-core = { path = "../cascade-core" }
-cascade-runtime = { path = "../cascade-runtime" }
